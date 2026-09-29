@@ -39,7 +39,7 @@ try {
         'migrate' => runMigrations($db, $basePath . '/database/migrations'),
         'migrate:status' => showStatus($db, $basePath . '/database/migrations'),
         'seed' => runSeeds($db, $basePath . '/database/seeds'),
-        'migrate:fresh' => runFresh($db, $pdo, $basePath),
+        'migrate:fresh' => runFresh($db, $basePath),
         default => help(),
     };
 } catch (Throwable $exception) {
@@ -190,9 +190,19 @@ function runSeeds(Database $db, string $path): void
     }
 }
 
-function runFresh(Database $db, PDO $pdo, string $basePath): void
+function runFresh(Database $db, string $basePath): void
 {
-    $tablas = ['categoria_propiedad', 'propiedades', 'categorias', 'migrations'];
+    $pdo = $db->connection();
+
+    $tablas = [
+        'categoria_propiedad',
+        'propiedades',
+        'categorias',
+        'localidades',
+        'provincias',
+        'paises',
+        'migrations',
+    ];
 
     foreach ($tablas as $tabla) {
         $pdo->exec("DROP TABLE IF EXISTS `{$tabla}`");

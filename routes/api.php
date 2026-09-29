@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controllers\CategoriaController;
+use App\Controllers\GeografiaController;
 use App\Controllers\HealthController;
 use App\Controllers\PropiedadController;
 use App\Core\Router;
@@ -23,4 +24,12 @@ return function (Router $router): void {
     $router->post('/api/propiedades', [PropiedadController::class, 'store']);
     $router->put('/api/propiedades/{id}', [PropiedadController::class, 'update']);
     $router->delete('/api/propiedades/{id}', [PropiedadController::class, 'destroy']);
+
+    // Catálogo geográfico: solo consulta. Los datos se cargan con database/seeds.
+    $router->get('/api/paises', [GeografiaController::class, 'paises']);
+    $router->get('/api/paises/{id}', [GeografiaController::class, 'pais']);
+    $router->get('/api/provincias', [GeografiaController::class, 'provincias']);
+    $router->get('/api/provincias/{id}', [GeografiaController::class, 'provincia']);
+    $router->get('/api/localidades', [GeografiaController::class, 'localidades']);
+    $router->get('/api/localidades/{id}', [GeografiaController::class, 'localidad']);
 };

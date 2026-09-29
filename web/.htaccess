@@ -1,12 +1,12 @@
 Options -Indexes
-DirectoryIndex router.php
+DirectoryIndex dispatch.php
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^ router.php [QSA,L]
+    RewriteRule ^ dispatch.php [QSA,L]
 </IfModule>
 
 <IfModule mod_headers.c>

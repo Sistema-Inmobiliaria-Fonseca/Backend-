@@ -24,7 +24,7 @@
         "sort-packages": true
     },
     "scripts": {
-        "serve": "php -S localhost:8000 -t web web/router.php",
+        "serve": "php -S localhost:8000 -t web bootstrap/server.php",
         "lint": "@php -l bootstrap/app.php"
     },
     "minimum-stability": "stable",

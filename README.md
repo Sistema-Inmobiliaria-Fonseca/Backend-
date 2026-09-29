@@ -1,7 +1,8 @@
 # Backend - API REST Inmobiliaria
 
 API REST en PHP 8.3 + MySQL (PDO), sin framework. Incluye la base del proyecto, las
-migraciones y el ABM de **categorías** y **propiedades** con relación N:M.
+migraciones, el ABM de **categorías** y **propiedades** con relación N:M y el catálogo
+geográfico precargado **País → Provincia → Localidad** (solo consulta).
 
 ## Requisitos
 
@@ -29,13 +30,15 @@ migraciones y el ABM de **categorías** y **propiedades** con relación N:M.
 3. Levantar el servidor de desarrollo desde la raíz del proyecto (`Backend-`):
 
    ```
-   C:\laragon\bin\php\php-8.3.33-Win32-vs16-x64\php.exe -S localhost:8000 -t web web\router.php
+   C:\laragon\bin\php\php-8.3.33-Win32-vs16-x64\php.exe -S localhost:8000 -t web bootstrap\server.php
    ```
 
-   `web/router.php` es el único punto de entrada (front controller) de la API y también
-   sirve de router para el servidor embebido de PHP. En el servidor embebido bloquea el
-   acceso a `src/`, `config/`, `bootstrap/`, `database/`, `storage/`, `tests/`, `bin/`,
-   `vendor/` y a todo archivo que empiece con `.` (por ejemplo `.env`).
+   `bootstrap/server.php` es el front controller (único punto de entrada) y vive fuera
+   de la carpeta web. Con el servidor embebido se indica como router; con Apache/Laragon
+   el `Document Root` es la carpeta `web` y `web/dispatch.php` delega en él. En ambos
+   casos se bloquea el acceso a `src/`, `config/`, `bootstrap/`, `database/`,
+   `storage/`, `tests/`, `bin/`, `vendor/` y a todo archivo que empiece con `.`
+   (por ejemplo `.env`).
 
    Con Laragon: `Document Root` = carpeta `web` del proyecto.
 
@@ -44,6 +47,7 @@ migraciones y el ABM de **categorías** y **propiedades** con relación N:M.
    ```
    curl http://localhost:8000/api/health/database
    curl http://localhost:8000/api/categorias
+   curl http://localhost:8000/api/paises
    curl http://localhost:8000/api/propiedades
    ```
 
@@ -74,6 +78,15 @@ php bin\console db:create        Crea solo la base de datos
 | POST   | `/api/propiedades`         | Crear propiedad                         |
 | PUT    | `/api/propiedades/{id}`    | Actualizar propiedad                    |
 | DELETE | `/api/propiedades/{id}`    | Eliminar propiedad                      |
+| GET    | `/api/paises`              | Listar países (catálogo)                |
+| GET    | `/api/paises/{id}`         | Ver un país con sus conteos             |
+| GET    | `/api/provincias`          | Listar provincias (`?pais_id=`)         |
+| GET    | `/api/provincias/{id}`     | Ver una provincia con sus localidades   |
+| GET    | `/api/localidades`         | Listar localidades (`?provincia_id=`)   |
+| GET    | `/api/localidades/{id}`    | Ver una localidad con país y provincia  |
+
+Países, provincias y localidades **no tienen ABM**: no existen `POST`, `PUT` ni `DELETE`
+para ellos (responden `405`). Los datos se cargan con los archivos de `database/seeds/`.
 
 ### Categorías
 
@@ -101,7 +114,8 @@ POST /api/propiedades
   "descripcion": "Casa de campo con pileta",
   "apto_credito": true,
   "estado": "disponible",
-  "categorias": [2, 7]
+  "categorias": [2, 7],
+  "localidad_id": 2
 }
 ```
 
@@ -110,8 +124,108 @@ POST /api/propiedades
 - `categorias` es una lista de ids de categorías existentes. Al crear o al enviar el
   campo en un `PUT`, la lista **reemplaza** las asociaciones; si no se envía, se
   conservan.
+- `localidad_id` es el id de una localidad del catálogo. Si se envía `null` se quita la
+  ubicación; si no se envía el campo, se conserva la actual.
 - En un `PUT` el campo `nombre` sigue siendo obligatorio y los campos omitidos
   mantienen su valor actual.
+- Un `localidad_id` inexistente o no numérico devuelve `422`.
+
+La respuesta incluye la ubicación ya resuelta, para no tener que cruzar los tres
+catálogos en el frontend:
+
+```json
+{
+  "id": 1,
+  "nombre": "Casa frente al mar",
+  "localidad_id": 2,
+  "ubicacion": {
+    "localidad": { "id": 2, "nombre": "Mar del Plata" },
+    "provincia": { "id": 1, "nombre": "Buenos Aires" },
+    "pais": { "id": 1, "nombre": "Argentina", "codigo_iso": "ARG" }
+  },
+  "categorias": [{ "id": 2, "nombre": "Casas" }]
+}
+```
+
+`ubicacion` es `null` cuando la propiedad no tiene localidad.
+
+## Catálogo geográfico (País → Provincia → Localidad)
+
+Es un catálogo **precargado y de solo lectura**. El administrador no crea, edita ni
+borra países, provincias ni localidades: los selecciona al cargar o modificar una
+propiedad. Para ampliarlo hay que agregar filas a los archivos de `database/seeds/`.
+
+```
+paises
+  id, nombre (único), codigo_iso (único), activo, created_at, updated_at
+
+provincias
+  id, pais_id, nombre, codigo (único), activo, created_at, updated_at
+  UNIQUE (pais_id, nombre)
+  FOREIGN KEY pais_id -> paises ON DELETE CASCADE
+
+localidades
+  id, provincia_id, nombre, activo, created_at, updated_at
+  UNIQUE (provincia_id, nombre)
+  FOREIGN KEY provincia_id -> provincias ON DELETE CASCADE
+
+propiedades.localidad_id
+  NULL, FOREIGN KEY -> localidades ON DELETE SET NULL
+```
+
+La propiedad se vincula a la **localidad**; de ahí sale la provincia y el país. Si se
+borra una localidad, las propiedades quedan sin ubicación en lugar de borrarse.
+
+### Selectores dependientes
+
+```bash
+# 1. El administrador elige el país
+curl http://localhost:8000/api/paises
+
+# 2. Solo las provincias de ese país
+curl "http://localhost:8000/api/provincias?pais_id=1"
+
+# 3. Solo las localidades de esa provincia
+curl "http://localhost:8000/api/localidades?provincia_id=1"
+
+# 4. El detalle de una provincia ya trae sus localidades
+curl http://localhost:8000/api/provincias/1
+
+# 5. El detalle de una localidad ya trae provincia y país
+curl http://localhost:8000/api/localidades/2
+```
+
+- `GET /api/paises` y `GET /api/paises/{id}` incluyen `provincias_count` y
+  `localidades_count`.
+- `GET /api/provincias` acepta `?pais_id=`; sin filtro devuelve las 145 provincias.
+- `GET /api/localidades` acepta `?provincia_id=`; sin filtro devuelve las 476
+  localidades.
+- `GET /api/localidades/{id}` incluye `propiedades_ids` (las propiedades que usan esa
+  localidad).
+- Un `pais_id` o `provincia_id` inválido devuelve `422`; un id inexistente devuelve `404`.
+
+### Datos precargados
+
+| Archivo | Contenido |
+|---------|-----------|
+| `database/seeds/010_paises.sql` | 7 países de Sudamérica con su código ISO |
+| `database/seeds/011_provincias.sql` | 145 provincias / estados / departamentos |
+| `database/seeds/012_localidades.sql` | 476 localidades |
+
+| País | ISO | Provincias | Localidades |
+|------|-----|-----------|-------------|
+| Argentina | ARG | 24 | 196 |
+| Bolivia | BOL | 9 | 21 |
+| Brasil | BRA | 27 | 76 |
+| Chile | CHL | 16 | 47 |
+| Colombia | COL | 32 | 55 |
+| Paraguay | PRY | 18 | 40 |
+| Uruguay | URY | 19 | 41 |
+
+Argentina trae las 24 provincias y las principales localidades de cada una. Es una
+base: si más adelante se necesita el listado completo de localidades de alguna
+provincia, alcanza con agregar las filas al final del `INSERT` de
+`database/seeds/012_localidades.sql` y volver a correr `php bin\console seed`.
 
 ## Base de datos
 
@@ -140,23 +254,24 @@ Dúplex.
 ```
 Backend-/
 ├── bin/console            Consola: migraciones, seeds y base de datos
-├── bootstrap/             Arranque de la app y autocargador
+├── bootstrap/             Arranque de la app, autocargador y front controller (server.php)
 ├── config/                Configuración por dominio (app.php, database.php)
 ├── database/
 │   ├── migrations/        Un archivo SQL por versión
-│   ├── seeds/             Datos iniciales
+│   ├── seeds/             Datos iniciales (categorías y catálogo geográfico)
 │   └── setup.sql          Creación de la base (alternativa a la consola)
 ├── routes/api.php         Definición de endpoints
 ├── src/
-│   ├── Controllers/       HealthController, CategoriaController, PropiedadController
+│   ├── Controllers/       Health, Categoria, Propiedad y Geografia
 │   ├── Core/              App, Router, Route, Request, Response, Database, Container,
 │   │                      Config, Env, Validator, Middleware, Exceptions/
 │   ├── Middleware/        CORS y manejo de errores
-│   ├── Repositories/      Acceso a datos (categorías, propiedades, tabla intermedia)
+│   ├── Repositories/      Acceso a datos (categorías, propiedades, tabla intermedia,
+│   │                      país, provincia y localidad)
 │   └── Services/          Reglas de negocio y validación
 ├── storage/logs/          Logs de la aplicación
 ├── tests/                 (próxima etapa)
-├── web/                   Document root: router.php y .htaccess
+├── web/                   Document root: dispatch.php y .htaccess
 ├── .env                   Variables de entorno (no se versiona)
 └── composer.json
 ```

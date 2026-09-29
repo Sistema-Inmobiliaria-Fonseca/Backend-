@@ -9,12 +9,14 @@ use App\Core\Exceptions\NotFoundHttpException;
 use App\Core\Exceptions\ValidationException;
 use App\Core\Validator;
 use App\Repositories\CategoriaPropiedadRepository;
+use App\Repositories\LocalidadRepository;
 use App\Repositories\PropiedadRepository;
 
 final class PropiedadService
 {
     private const RULES = [
         'nombre' => 'required|string|max:200',
+        'localidad_id' => 'nullable|integer|min:1',
         'metros_cuadrados' => 'nullable|numeric|min:0',
         'valor' => 'nullable|numeric|min:0',
         'cantidad_habitaciones' => 'nullable|integer|min:0',
@@ -27,6 +29,7 @@ final class PropiedadService
 
     private const LABELS = [
         'nombre' => 'nombre',
+        'localidad_id' => 'id de localidad',
         'metros_cuadrados' => 'metros cuadrados',
         'valor' => 'valor',
         'cantidad_habitaciones' => 'cantidad de habitaciones',
@@ -40,7 +43,8 @@ final class PropiedadService
     public function __construct(
         private readonly Database $db,
         private readonly PropiedadRepository $propiedades,
-        private readonly CategoriaPropiedadRepository $pivot
+        private readonly CategoriaPropiedadRepository $pivot,
+        private readonly LocalidadRepository $localidades
     ) {
     }
 
@@ -66,9 +70,10 @@ final class PropiedadService
     {
         $validados = Validator::validate($datos, self::RULES, self::LABELS);
         $categoriaIds = $this->validarCategorias($validados['categorias'] ?? []);
+        $localidadId = $this->validarLocalidad($validados['localidad_id'] ?? null);
 
-        $id = $this->db->transaction(function () use ($validados, $categoriaIds): int {
-            $propiedadId = $this->propiedades->create($validados);
+        $id = $this->db->transaction(function () use ($validados, $categoriaIds, $localidadId): int {
+            $propiedadId = $this->propiedades->create($validados + ['localidad_id' => $localidadId]);
             $this->pivot->sync($propiedadId, $categoriaIds);
 
             return $propiedadId;
@@ -83,9 +88,12 @@ final class PropiedadService
         $validados = Validator::validate($datos, self::RULES, self::LABELS);
         $categoriaIds = $this->validarCategorias($validados['categorias'] ?? []);
 
-        $this->db->transaction(function () use ($id, $actual, $validados, $categoriaIds): void {
+        $this->db->transaction(function () use ($id, $actual, $datos, $validados, $categoriaIds): void {
             $this->propiedades->update($id, [
                 'nombre' => $validados['nombre'] ?? $actual['nombre'],
+                'localidad_id' => array_key_exists('localidad_id', $datos)
+                    ? $this->validarLocalidad($validados['localidad_id'] ?? null)
+                    : $actual['localidad_id'],
                 'metros_cuadrados' => $validados['metros_cuadrados'] ?? $actual['metros_cuadrados'],
                 'valor' => $validados['valor'] ?? $actual['valor'],
                 'cantidad_habitaciones' => $validados['cantidad_habitaciones'] ?? $actual['cantidad_habitaciones'],
@@ -145,6 +153,23 @@ final class PropiedadService
         return $ids;
     }
 
+    private function validarLocalidad(mixed $localidadId): ?int
+    {
+        if ($localidadId === null) {
+            return null;
+        }
+
+        $id = (int) $localidadId;
+
+        if ($this->localidades->findByIds([$id]) === []) {
+            throw new ValidationException('Los datos enviados no son válidos.', [
+                'localidad_id' => "La localidad {$id} no existe en el catálogo geográfico.",
+            ]);
+        }
+
+        return $id;
+    }
+
     private function conCategorias(array $propiedades): array
     {
         $porPropiedad = [];
@@ -171,6 +196,9 @@ final class PropiedadService
         }
 
         $propiedad['id'] = (int) $propiedad['id'];
+        $propiedad['localidad_id'] = $propiedad['localidad_id'] !== null
+            ? (int) $propiedad['localidad_id']
+            : null;
         $propiedad['metros_cuadrados'] = $propiedad['metros_cuadrados'] !== null
             ? (float) $propiedad['metros_cuadrados']
             : null;
@@ -181,7 +209,38 @@ final class PropiedadService
         $propiedad['descripcion'] = $propiedad['descripcion'] !== null
             ? (string) $propiedad['descripcion']
             : null;
+        $propiedad['ubicacion'] = $this->formatearUbicacion($propiedad);
+
+        foreach (['localidad_nombre', 'provincia_id', 'provincia_nombre', 'pais_id', 'pais_nombre', 'pais_codigo_iso'] as $columna) {
+            unset($propiedad[$columna]);
+        }
 
         return $propiedad;
+    }
+
+    /**
+     *Arma el árbol País -> Provincia -> Localidad a partir del JOIN del repositorio.
+     */
+    private function formatearUbicacion(array $propiedad): ?array
+    {
+        if ($propiedad['localidad_id'] === null) {
+            return null;
+        }
+
+        return [
+            'localidad' => [
+                'id' => $propiedad['localidad_id'],
+                'nombre' => $propiedad['localidad_nombre'],
+            ],
+            'provincia' => [
+                'id' => (int) $propiedad['provincia_id'],
+                'nombre' => $propiedad['provincia_nombre'],
+            ],
+            'pais' => [
+                'id' => (int) $propiedad['pais_id'],
+                'nombre' => $propiedad['pais_nombre'],
+                'codigo_iso' => $propiedad['pais_codigo_iso'],
+            ],
+        ];
     }
 }
