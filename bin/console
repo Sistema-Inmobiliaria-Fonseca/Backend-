@@ -1,0 +1,256 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Core\Config;
+use App\Core\Database;
+use App\Core\Env;
+
+if (PHP_SAPI !== 'cli') {
+    exit("Este script solo se ejecuta por consola.\n");
+}
+
+$basePath = dirname(__DIR__);
+
+require $basePath . '/bootstrap/autoload.php';
+
+Env::load($basePath . '/.env');
+
+$config = new Config($basePath . '/config');
+date_default_timezone_set((string) $config->get('app.timezone', 'UTC'));
+
+$databaseConfig = (array) $config->get('database', []);
+$connection = (array) ($databaseConfig['connections'][$databaseConfig['default'] ?? 'mysql'] ?? []);
+
+$command = $argv[1] ?? 'help';
+
+try {
+    if ($command === 'db:create') {
+        createDatabase($connection);
+        echo "Base de datos '{$connection['database']}' lista.\n";
+        exit(0);
+    }
+
+    $pdo = ensureDatabase($connection);
+    $db = new Database($databaseConfig);
+    $db->connection();
+
+    match ($command) {
+        'migrate' => runMigrations($db, $basePath . '/database/migrations'),
+        'migrate:status' => showStatus($db, $basePath . '/database/migrations'),
+        'seed' => runSeeds($db, $basePath . '/database/seeds'),
+        'migrate:fresh' => runFresh($db, $pdo, $basePath),
+        default => help(),
+    };
+} catch (Throwable $exception) {
+    fwrite(STDERR, 'Error: ' . $exception->getMessage() . "\n");
+    exit(1);
+}
+
+function createDatabase(array $connection): void
+{
+    $charset = (string) ($connection['charset'] ?? 'utf8mb4');
+    $collation = (string) ($connection['collation'] ?? 'utf8mb4_unicode_ci');
+    $database = (string) ($connection['database'] ?? '');
+
+    $pdo = new PDO(
+        dsn($connection, false),
+        (string) ($connection['username'] ?? 'root'),
+        (string) ($connection['password'] ?? ''),
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+    );
+
+    $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$database}` CHARACTER SET {$charset} COLLATE {$collation}");
+}
+
+function ensureDatabase(array $connection): PDO
+{
+    $pdo = createConnection($connection, false);
+    $database = (string) ($connection['database'] ?? '');
+    $charset = (string) ($connection['charset'] ?? 'utf8mb4');
+    $collation = (string) ($connection['collation'] ?? 'utf8mb4_unicode_ci');
+
+    $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$database}` CHARACTER SET {$charset} COLLATE {$collation}");
+
+    return $pdo;
+}
+
+function createConnection(array $connection, bool $withDatabase): PDO
+{
+    return new PDO(
+        dsn($connection, $withDatabase),
+        (string) ($connection['username'] ?? 'root'),
+        (string) ($connection['password'] ?? ''),
+        [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        ]
+    );
+}
+
+function dsn(array $connection, bool $withDatabase): string
+{
+    $dsn = sprintf(
+        'mysql:host=%s;port=%d;charset=%s',
+        $connection['host'] ?? '127.0.0.1',
+        (int) ($connection['port'] ?? 3306),
+        $connection['charset'] ?? 'utf8mb4'
+    );
+
+    if ($withDatabase) {
+        $dsn .= ';dbname=' . ($connection['database'] ?? '');
+    }
+
+    return $dsn;
+}
+
+function runMigrations(Database $db, string $path): void
+{
+    $pdo = $db->connection();
+
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS migrations (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            migration VARCHAR(191) NOT NULL,
+            batch INT UNSIGNED NOT NULL,
+            applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_migrations_migration (migration)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $aplicadas = array_column(
+        $db->select('SELECT migration FROM migrations'),
+        'migration'
+    );
+
+    $pendientes = array_values(array_filter(
+        migrationFiles($path),
+        static fn (string $file): bool => !in_array(basename($file), $aplicadas, true)
+    ));
+
+    if ($pendientes === []) {
+        echo "No hay migraciones pendientes.\n";
+
+        return;
+    }
+
+    $batch = (int) ($db->scalar('SELECT COALESCE(MAX(batch), 0) FROM migrations') ?? 0) + 1;
+
+    foreach ($pendientes as $file) {
+        $nombre = basename($file);
+
+        foreach (statements(file_get_contents($file) ?: '') as $sql) {
+            $pdo->exec($sql);
+        }
+
+        $db->statement(
+            'INSERT INTO migrations (migration, batch) VALUES (:migration, :batch)',
+            ['migration' => $nombre, 'batch' => $batch]
+        );
+
+        echo "Aplicada: {$nombre}\n";
+    }
+
+    echo count($pendientes) . ' migracion(es) aplicada(s).' . PHP_EOL;
+}
+
+function showStatus(Database $db, string $path): void
+{
+    $pdo = $db->connection();
+
+    $tabla = $pdo->query("SHOW TABLES LIKE 'migrations'")->fetchColumn();
+
+    $aplicadas = $tabla === false ? [] : array_column($db->select('SELECT migration FROM migrations'), 'migration');
+
+    foreach (migrationFiles($path) as $file) {
+        $nombre = basename($file);
+        echo (in_array($nombre, $aplicadas, true) ? '[aplicada] ' : '[pendiente] ') . $nombre . PHP_EOL;
+    }
+}
+
+function runSeeds(Database $db, string $path): void
+{
+    $pdo = $db->connection();
+    $archivos = glob(rtrim($path, '/\\') . DIRECTORY_SEPARATOR . '*.sql') ?: [];
+    sort($archivos);
+
+    if ($archivos === []) {
+        echo "No hay archivos de seed en {$path}.\n";
+
+        return;
+    }
+
+    foreach ($archivos as $archivo) {
+        foreach (statements(file_get_contents($archivo) ?: '') as $sql) {
+            $pdo->exec($sql);
+        }
+
+        echo 'Aplicados datos de: ' . basename($archivo) . PHP_EOL;
+    }
+}
+
+function runFresh(Database $db, PDO $pdo, string $basePath): void
+{
+    $tablas = ['categoria_propiedad', 'propiedades', 'categorias', 'migrations'];
+
+    foreach ($tablas as $tabla) {
+        $pdo->exec("DROP TABLE IF EXISTS `{$tabla}`");
+    }
+
+    echo "Tablas eliminadas.\n";
+
+    runMigrations($db, $basePath . '/database/migrations');
+    runSeeds($db, $basePath . '/database/seeds');
+}
+
+function migrationFiles(string $path): array
+{
+    $files = glob(rtrim($path, '/\\') . DIRECTORY_SEPARATOR . '*.sql') ?: [];
+    sort($files);
+
+    return $files;
+}
+
+function statements(string $sql): array
+{
+    $buffer = '';
+    $statements = [];
+
+    foreach (preg_split('/\R/', $sql) ?: [] as $linea) {
+        $recortada = trim($linea);
+
+        if ($recortada === '' || str_starts_with($recortada, '--')) {
+            continue;
+        }
+
+        $buffer .= $linea . "\n";
+
+        if (str_ends_with($recortada, ';')) {
+            $statements[] = trim($buffer);
+            $buffer = '';
+        }
+    }
+
+    if (trim($buffer) !== '') {
+        $statements[] = trim($buffer);
+    }
+
+    return array_values(array_filter($statements, static fn (string $item): bool => $item !== ''));
+}
+
+function help(): void
+{
+    echo <<<TXT
+
+    Consola del backend
+
+      migrate          Aplica las migraciones pendientes de database/migrations
+      migrate:status   Muestra qué migraciones se aplicaron
+      migrate:fresh    Borra las tablas, aplica migraciones y seeds
+      seed             Ejecuta los archivos de database/seeds
+      db:create        Crea la base de datos definida en .env
+
+    TXT;
+    echo PHP_EOL;
+}
