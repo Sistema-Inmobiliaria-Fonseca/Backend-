@@ -12,6 +12,8 @@ final class Request
 
     private array $routeParams = [];
 
+    private ?array $user = null;
+
     public function __construct(
         private readonly string $method,
         private readonly string $path,
@@ -129,6 +131,22 @@ final class Request
     {
         $clone = clone $this;
         $clone->routeParams = $params;
+
+        return $clone;
+    }
+
+    /**
+     * Usuario inyectado por AuthenticateMiddleware.
+     */
+    public function user(): ?array
+    {
+        return $this->user;
+    }
+
+    public function withUser(array $user): self
+    {
+        $clone = clone $this;
+        $clone->user = $user;
 
         return $clone;
     }

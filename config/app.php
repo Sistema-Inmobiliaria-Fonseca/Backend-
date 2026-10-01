@@ -14,6 +14,10 @@ return [
     'version' => Env::get('APP_VERSION', '0.1.0'),
     'timezone' => Env::get('APP_TIMEZONE', 'UTC'),
     'log_file' => $root . '/storage/logs/app.log',
+    'auth' => [
+        'token_secret' => Env::get('AUTH_TOKEN_SECRET', ''),
+        'token_ttl' => (int) Env::get('AUTH_TOKEN_TTL', '43200'),
+    ],
     'cors' => [
         'allowed_origins' => array_values(array_filter(array_map(
             'trim',

@@ -1,8 +1,9 @@
 # Backend - API REST Inmobiliaria
 
 API REST en PHP 8.3 + MySQL (PDO), sin framework. Incluye la base del proyecto, las
-migraciones, el ABM de **categorías** y **propiedades** con relación N:M y el catálogo
-geográfico precargado **País → Provincia → Localidad** (solo consulta).
+migraciones, autenticación por token, el ABM de **categorías** y **propiedades** con
+relación N:M y el catálogo geográfico precargado **País → Provincia → Localidad**
+(solo consulta).
 
 ## Requisitos
 
@@ -30,10 +31,10 @@ geográfico precargado **País → Provincia → Localidad** (solo consulta).
 3. Levantar el servidor de desarrollo desde la raíz del proyecto (`Backend-`):
 
    ```
-   C:\laragon\bin\php\php-8.3.33-Win32-vs16-x64\php.exe -S localhost:8000 -t web bootstrap\server.php
+   C:\laragon\bin\php\php-8.3.33-Win32-vs16-x64\php.exe -S localhost:8000 -t web bootstrap\front.php
    ```
 
-   `bootstrap/server.php` es el front controller (único punto de entrada) y vive fuera
+   `bootstrap/front.php` es el front controller (único punto de entrada) y vive fuera
    de la carpeta web. Con el servidor embebido se indica como router; con Apache/Laragon
    el `Document Root` es la carpeta `web` y `web/dispatch.php` delega en él. En ambos
    casos se bloquea el acceso a `src/`, `config/`, `bootstrap/`, `database/`,
@@ -46,9 +47,17 @@ geográfico precargado **País → Provincia → Localidad** (solo consulta).
 
    ```
    curl http://localhost:8000/api/health/database
-   curl http://localhost:8000/api/categorias
-   curl http://localhost:8000/api/paises
-   curl http://localhost:8000/api/propiedades
+   ```
+
+   Los endpoints de datos requieren token. Conseguilo con el login y reenvialo:
+
+   ```
+   curl -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/json" \
+     -d "{\"email\":\"admin@inmobiliaria.com\",\"password\":\"admin123\"}"
+
+   curl http://localhost:8000/api/categorias -H "Authorization: Bearer <token>"
+   curl http://localhost:8000/api/propiedades -H "Authorization: Bearer <token>"
+   curl http://localhost:8000/api/paises -H "Authorization: Bearer <token>"
    ```
 
 ## Consola
@@ -63,11 +72,16 @@ php bin\console db:create        Crea solo la base de datos
 
 ## Endpoints
 
+Todos los endpoints salvo los de **salud** requieren autenticación. El único público
+además de `/api/health*` es `POST /api/auth/login`.
+
 | Método | Ruta                       | Descripción                             |
 |--------|----------------------------|-----------------------------------------|
 | GET    | `/api`                     | Información del servicio y endpoints    |
 | GET    | `/api/health`              | Estado de la API                        |
 | GET    | `/api/health/database`     | Estado de la conexión a MySQL           |
+| POST   | `/api/auth/login`          | Iniciar sesión y obtener un token       |
+| GET    | `/api/auth/me`             | Usuario del token enviado               |
 | GET    | `/api/categorias`          | Listar categorías                       |
 | GET    | `/api/categorias/{id}`     | Ver una categoría con sus propiedades   |
 | POST   | `/api/categorias`          | Crear categoría                         |
@@ -87,6 +101,36 @@ php bin\console db:create        Crea solo la base de datos
 
 Países, provincias y localidades **no tienen ABM**: no existen `POST`, `PUT` ni `DELETE`
 para ellos (responden `405`). Los datos se cargan con los archivos de `database/seeds/`.
+
+### Autenticación
+
+```bash
+curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@inmobiliaria.com","password":"admin123"}'
+```
+
+```json
+{ "success": true, "data": { "token": "eyJ1aWQiOjF9...", "expires_in": 43200,
+  "user": { "id": 1, "nombre": "Administrador", "email": "admin@inmobiliaria.com", "rol": "admin" } } }
+```
+
+El token es un JWT-like firmado con HMAC-SHA256 y se manda en cada request:
+
+```
+Authorization: Bearer <token>
+```
+
+Si falta, venció o la firma no coincide, la API responde `401`.
+
+- El secreto de firma sale de `AUTH_TOKEN_SECRET` en el `.env`. Sin ese valor el login
+  falla con un error `500`: generá uno con
+  `php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"`.
+- `AUTH_TOKEN_TTL` define la vigencia en segundos (por defecto `43200`, 12 horas).
+- Los tokens no se guardan en la base: son sin estado, así que el logout se resuelve
+  descartando el token en el cliente.
+- El usuario inicial lo crea `database/seeds/020_usuarios.sql`
+  (`admin@inmobiliaria.com` / `admin123`). Cambiá esa clave antes de publicar.
 
 ### Categorías
 
@@ -254,7 +298,7 @@ Dúplex.
 ```
 Backend-/
 ├── bin/console            Consola: migraciones, seeds y base de datos
-├── bootstrap/             Arranque de la app, autocargador y front controller (server.php)
+├── bootstrap/             Arranque de la app, autocargador y front controller (front.php)
 ├── config/                Configuración por dominio (app.php, database.php)
 ├── database/
 │   ├── migrations/        Un archivo SQL por versión
@@ -341,6 +385,6 @@ $this->db->transaction(function (): int {
 ## Próximas etapas
 
 - Filtros, búsqueda y paginación de propiedades
-- Autenticación y autorización
+- Roles y permisos (hoy todos los usuarios autenticados son administradores)
 - Imágenes de las propiedades
 - Ubicación (mapa) y amenities

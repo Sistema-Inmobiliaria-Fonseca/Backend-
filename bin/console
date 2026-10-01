@@ -201,6 +201,7 @@ function runFresh(Database $db, string $basePath): void
         'localidades',
         'provincias',
         'paises',
+        'usuarios',
         'migrations',
     ];
 
