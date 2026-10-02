@@ -93,6 +93,44 @@ final class Request
         return array_merge($this->query, $this->body);
     }
 
+    /**
+     * Archivos subidos en multipart/form-data, normalizados a un solo archivo por campo.
+     * Cada entrada trae: name, type, tmp_name, error y size.
+     */
+    public function file(string $key): ?array
+    {
+        $files = $this->files();
+        $file = $files[$key] ?? null;
+
+        return is_array($file) ? $file : null;
+    }
+
+    public function hasFile(string $key): bool
+    {
+        return $this->file($key) !== null;
+    }
+
+    public function files(): array
+    {
+        $normalizados = [];
+
+        foreach ($_FILES as $key => $file) {
+            if (!is_array($file) || !isset($file['name'])) {
+                continue;
+            }
+
+            $normalizados[$key] = [
+                'name' => (string) $file['name'],
+                'type' => (string) ($file['type'] ?? ''),
+                'tmp_name' => (string) ($file['tmp_name'] ?? ''),
+                'error' => (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE),
+                'size' => (int) ($file['size'] ?? 0),
+            ];
+        }
+
+        return $normalizados;
+    }
+
     public function header(string $name, ?string $default = null): ?string
     {
         $key = 'HTTP_' . strtoupper(str_replace('-', '_', $name));

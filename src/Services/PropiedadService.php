@@ -23,7 +23,7 @@ final class PropiedadService
         'cantidad_ambientes' => 'nullable|integer|min:0',
         'descripcion' => 'nullable|string|max:5000',
         'apto_credito' => 'nullable|boolean',
-        'estado' => 'nullable|in:disponible,alquilada',
+        'estado' => 'nullable|in:disponible,alquilada,vendida',
         'categorias' => 'nullable|array',
     ];
 
@@ -44,7 +44,8 @@ final class PropiedadService
         private readonly Database $db,
         private readonly PropiedadRepository $propiedades,
         private readonly CategoriaPropiedadRepository $pivot,
-        private readonly LocalidadRepository $localidades
+        private readonly LocalidadRepository $localidades,
+        private readonly PropiedadImagenService $imagenes
     ) {
     }
 
@@ -62,6 +63,7 @@ final class PropiedadService
         }
 
         $propiedad['categorias'] = $this->pivot->categoriasDe($id);
+        $propiedad['imagenes'] = $this->imagenes->listar($id);
 
         return $propiedad;
     }
@@ -114,6 +116,10 @@ final class PropiedadService
     public function eliminar(int $id): void
     {
         $this->buscar($id);
+
+        // Los archivos se borran antes del DELETE: la cascada de la base se lleva
+        // las filas, pero el disco hay que limpiarlo a mano.
+        $this->imagenes->eliminarArchivosDePropiedad($id);
         $this->propiedades->delete($id);
     }
 
@@ -181,9 +187,15 @@ final class PropiedadService
             ];
         }
 
-        return array_map(function (array $propiedad) use ($porPropiedad): array {
+        // Una sola consulta para las imágenes de todas las propiedades del listado.
+        $imagenesPorPropiedad = $this->imagenes->listarVarias(
+            array_map(static fn (array $fila): int => (int) $fila['id'], $propiedades)
+        );
+
+        return array_map(function (array $propiedad) use ($porPropiedad, $imagenesPorPropiedad): array {
             $propiedad = $this->formatear($propiedad);
             $propiedad['categorias'] = $porPropiedad[$propiedad['id']] ?? [];
+            $propiedad['imagenes'] = $imagenesPorPropiedad[$propiedad['id']] ?? [];
 
             return $propiedad;
         }, $propiedades);

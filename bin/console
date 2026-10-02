@@ -196,6 +196,7 @@ function runFresh(Database $db, string $basePath): void
 
     $tablas = [
         'categoria_propiedad',
+        'propiedad_imagenes',
         'propiedades',
         'categorias',
         'localidades',

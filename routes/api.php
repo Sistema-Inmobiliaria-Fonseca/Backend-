@@ -7,6 +7,7 @@ use App\Controllers\CategoriaController;
 use App\Controllers\GeografiaController;
 use App\Controllers\HealthController;
 use App\Controllers\PropiedadController;
+use App\Controllers\PropiedadImagenController;
 use App\Core\Router;
 use App\Middleware\AuthenticateMiddleware;
 
@@ -32,6 +33,16 @@ return function (Router $router): void {
     $router->post('/api/propiedades', [PropiedadController::class, 'store'], $auth);
     $router->put('/api/propiedades/{id}', [PropiedadController::class, 'update'], $auth);
     $router->delete('/api/propiedades/{id}', [PropiedadController::class, 'destroy'], $auth);
+
+    // Imagenes de la propiedad. El orden arranca en 1 y la de orden 1 es la principal.
+    $router->get('/api/propiedades/{id}/imagenes', [PropiedadImagenController::class, 'index'], $auth);
+    $router->post('/api/propiedades/{id}/imagenes', [PropiedadImagenController::class, 'store'], $auth);
+    $router->put('/api/propiedades/{id}/imagenes/orden', [PropiedadImagenController::class, 'updateOrder'], $auth);
+    $router->delete('/api/propiedades/{id}/imagenes/{imagenId}', [PropiedadImagenController::class, 'destroy'], $auth);
+
+    // Servicio del archivo. Sin token: las fotos van en el <img> del sitio, que no
+    // puede mandar cabeceras. El nombre se valida contra el patron que genera la API.
+    $router->get('/uploads/propiedades/{nombre}', [PropiedadImagenController::class, 'show']);
 
     // Catalogo geografico: solo consulta. Los datos se cargan con database/seeds.
     $router->get('/api/paises', [GeografiaController::class, 'paises'], $auth);
