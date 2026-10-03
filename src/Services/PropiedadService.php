@@ -51,9 +51,13 @@ final class PropiedadService
 
     public function listar(): array
     {
-        return $this->conCategorias($this->propiedades->all());
+        $propiedades = $this->conCategorias($this->propiedades->all());
+        foreach ($propiedades as &$propiedad) {
+            $propiedad["imagenes"] = $this->imagenes->listar((int) $propiedad["id"]);
+        }
+        unset($propiedad);
+        return $propiedades;
     }
-
     public function buscar(int $id): array
     {
         $propiedad = $this->formatear($this->propiedades->find($id));
@@ -67,7 +71,6 @@ final class PropiedadService
 
         return $propiedad;
     }
-
     public function crear(array $datos): array
     {
         $validados = Validator::validate($datos, self::RULES, self::LABELS);
