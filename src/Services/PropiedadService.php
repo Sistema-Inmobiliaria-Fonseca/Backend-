@@ -8,25 +8,33 @@ use App\Core\Database;
 use App\Core\Exceptions\NotFoundHttpException;
 use App\Core\Exceptions\ValidationException;
 use App\Core\Validator;
+use App\Models\TipoMoneda;
 use App\Repositories\CategoriaPropiedadRepository;
 use App\Repositories\LocalidadRepository;
 use App\Repositories\PropiedadRepository;
 
 final class PropiedadService
 {
-    private const RULES = [
-        'nombre' => 'required|string|max:200',
-        'localidad_id' => 'nullable|integer|min:1',
-        'metros_cuadrados' => 'nullable|numeric|min:0',
-        'valor' => 'nullable|numeric|min:0',
-        'moneda' => 'nullable|string|max:10',
-        'cantidad_habitaciones' => 'nullable|integer|min:0',
-        'cantidad_ambientes' => 'nullable|integer|min:0',
-        'descripcion' => 'nullable|string|max:5000',
-        'apto_credito' => 'nullable|boolean',
-        'estado' => 'nullable|in:disponible,alquilada,vendida',
-        'categorias' => 'nullable|array',
-    ];
+    /**
+     * Es un metodo y no una constante porque la regla de moneda se arma con
+     * TipoMoneda, y PHP no permite llamadas a funciones en constantes.
+     */
+    private static function rules(): array
+    {
+        return [
+            'nombre' => 'required|string|max:200',
+            'localidad_id' => 'nullable|integer|min:1',
+            'metros_cuadrados' => 'nullable|numeric|min:0',
+            'valor' => 'nullable|numeric|min:0',
+            'moneda' => 'nullable|in:' . implode(',', TipoMoneda::valores()),
+            'cantidad_habitaciones' => 'nullable|integer|min:0',
+            'cantidad_ambientes' => 'nullable|integer|min:0',
+            'descripcion' => 'nullable|string|max:5000',
+            'apto_credito' => 'nullable|boolean',
+            'estado' => 'nullable|in:disponible,alquilada,vendida',
+            'categorias' => 'nullable|array',
+        ];
+    }
 
     private const LABELS = [
         'nombre' => 'nombre',
@@ -72,7 +80,8 @@ final class PropiedadService
     }
     public function crear(array $datos): array
     {
-        $validados = Validator::validate($datos, self::RULES, self::LABELS);
+        $validados = Validator::validate($datos, self::rules(), self::LABELS);
+        $this->validarValorYMoneda($validados);
         $categoriaIds = $this->validarCategorias($validados['categorias'] ?? []);
         $localidadId = $this->validarLocalidad($validados['localidad_id'] ?? null);
 
@@ -89,7 +98,8 @@ final class PropiedadService
     public function actualizar(int $id, array $datos): array
     {
         $actual = $this->buscar($id);
-        $validados = Validator::validate($datos, self::RULES, self::LABELS);
+        $validados = Validator::validate($datos, self::rules(), self::LABELS);
+        $this->validarValorYMoneda($validados);
         $categoriaIds = $this->validarCategorias($validados['categorias'] ?? []);
 
         $this->db->transaction(function () use ($id, $actual, $datos, $validados, $categoriaIds): void {
@@ -124,6 +134,34 @@ final class PropiedadService
         // las filas, pero el disco hay que limpiarlo a mano.
         $this->imagenes->eliminarArchivosDePropiedad($id);
         $this->propiedades->delete($id);
+    }
+
+    /**
+     * El valor y la moneda van juntos: no tiene sentido guardar un precio sin
+     * saber en que moneda esta expresado.
+     */
+    private function validarValorYMoneda(array $validados): void
+    {
+        $valor = $validados['valor'] ?? null;
+        $moneda = $validados['moneda'] ?? null;
+
+        if ($valor === null && $moneda === null) {
+            return;
+        }
+
+        $errores = [];
+
+        if ($valor === null) {
+            $errores['valor'] = 'El valor es obligatorio cuando se indica la moneda.';
+        }
+
+        if ($moneda === null) {
+            $errores['moneda'] = 'La moneda es obligatoria cuando se indica el valor.';
+        }
+
+        if ($errores !== []) {
+            throw new ValidationException('Los datos enviados no son válidos.', $errores);
+        }
     }
 
     private function validarCategorias(mixed $categorias): array
@@ -218,7 +256,7 @@ final class PropiedadService
             ? (float) $propiedad['metros_cuadrados']
             : null;
         $propiedad['valor'] = $propiedad['valor'] !== null ? (float) $propiedad['valor'] : null;
-        $propiedad['moneda'] = $propiedad['moneda'] !== null ? (string) $propiedad['moneda'] : null;
+        $propiedad['moneda'] = TipoMoneda::tryFrom((string) $propiedad['moneda'])?->value;
         $propiedad['cantidad_habitaciones'] = (int) $propiedad['cantidad_habitaciones'];
         $propiedad['cantidad_ambientes'] = (int) $propiedad['cantidad_ambientes'];
         $propiedad['apto_credito'] = (bool) $propiedad['apto_credito'];
