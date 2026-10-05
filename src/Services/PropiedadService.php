@@ -51,12 +51,9 @@ final class PropiedadService
 
     public function listar(): array
     {
-        $propiedades = $this->conCategorias($this->propiedades->all());
-        foreach ($propiedades as &$propiedad) {
-            $propiedad["imagenes"] = $this->imagenes->listar((int) $propiedad["id"]);
-        }
-        unset($propiedad);
-        return $propiedades;
+        // conCategorias() ya deja las imagenes resueltas en una sola consulta
+        // (listarVarias), asi que no hay que volver a consultarlas por propiedad.
+        return $this->conCategorias($this->propiedades->all());
     }
     public function buscar(int $id): array
     {

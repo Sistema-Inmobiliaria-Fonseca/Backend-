@@ -8,6 +8,8 @@ use App\Controllers\GeografiaController;
 use App\Controllers\HealthController;
 use App\Controllers\PropiedadController;
 use App\Controllers\PropiedadImagenController;
+use App\Controllers\PublicCategoriaController;
+use App\Controllers\PublicPropiedadController;
 use App\Core\Router;
 use App\Middleware\AuthenticateMiddleware;
 
@@ -51,4 +53,10 @@ return function (Router $router): void {
     $router->get('/api/provincias/{id}', [GeografiaController::class, 'provincia'], $auth);
     $router->get('/api/localidades', [GeografiaController::class, 'localidades'], $auth);
     $router->get('/api/localidades/{id}', [GeografiaController::class, 'localidad'], $auth);
+
+    // Lectura publica para el sitio de la Landing, que no tiene sesion ni token.
+    // Solo GET: lo que se escribe sigue yendo por /api/propiedades con token.
+    $router->get('/api/public/propiedades', [PublicPropiedadController::class, 'index']);
+    $router->get('/api/public/propiedades/{id}', [PublicPropiedadController::class, 'show']);
+    $router->get('/api/public/categorias', [PublicCategoriaController::class, 'index']);
 };
