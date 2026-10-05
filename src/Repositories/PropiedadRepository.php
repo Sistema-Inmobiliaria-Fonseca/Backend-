@@ -12,7 +12,7 @@ final class PropiedadRepository
     {
     }
 
-    private const SELECT = 'SELECT p.id, p.nombre, p.localidad_id, p.metros_cuadrados, p.valor,
+    private const SELECT = 'SELECT p.id, p.nombre, p.localidad_id, p.metros_cuadrados, p.valor, p.moneda,
                                    p.cantidad_habitaciones, p.cantidad_ambientes, p.descripcion,
                                    p.apto_credito, p.estado, p.created_at, p.updated_at,
                                    lo.nombre AS localidad_nombre,
@@ -37,10 +37,10 @@ final class PropiedadRepository
     {
         return $this->db->insert(
             'INSERT INTO propiedades
-                 (nombre, localidad_id, metros_cuadrados, valor, cantidad_habitaciones, cantidad_ambientes,
+                 (nombre, localidad_id, metros_cuadrados, valor, moneda, cantidad_habitaciones, cantidad_ambientes,
                   descripcion, apto_credito, estado)
              VALUES
-                 (:nombre, :localidad_id, :metros_cuadrados, :valor, :cantidad_habitaciones, :cantidad_ambientes,
+                 (:nombre, :localidad_id, :metros_cuadrados, :valor, :moneda, :cantidad_habitaciones, :cantidad_ambientes,
                   :descripcion, :apto_credito, :estado)',
             $this->params($data)
         );
@@ -57,6 +57,7 @@ final class PropiedadRepository
                  localidad_id = :localidad_id,
                  metros_cuadrados = :metros_cuadrados,
                  valor = :valor,
+                 moneda = :moneda,
                  cantidad_habitaciones = :cantidad_habitaciones,
                  cantidad_ambientes = :cantidad_ambientes,
                  descripcion = :descripcion,
@@ -79,6 +80,7 @@ final class PropiedadRepository
             'localidad_id' => $data['localidad_id'] ?? null,
             'metros_cuadrados' => $data['metros_cuadrados'] ?? null,
             'valor' => $data['valor'] ?? null,
+            'moneda' => $data['moneda'] ?? null,
             'cantidad_habitaciones' => (int) ($data['cantidad_habitaciones'] ?? 0),
             'cantidad_ambientes' => (int) ($data['cantidad_ambientes'] ?? 0),
             'descripcion' => $data['descripcion'] ?? null,

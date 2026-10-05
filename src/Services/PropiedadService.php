@@ -19,6 +19,7 @@ final class PropiedadService
         'localidad_id' => 'nullable|integer|min:1',
         'metros_cuadrados' => 'nullable|numeric|min:0',
         'valor' => 'nullable|numeric|min:0',
+        'moneda' => 'nullable|string|max:10',
         'cantidad_habitaciones' => 'nullable|integer|min:0',
         'cantidad_ambientes' => 'nullable|integer|min:0',
         'descripcion' => 'nullable|string|max:5000',
@@ -32,12 +33,13 @@ final class PropiedadService
         'localidad_id' => 'id de localidad',
         'metros_cuadrados' => 'metros cuadrados',
         'valor' => 'valor',
+        'moneda' => 'moneda',
         'cantidad_habitaciones' => 'cantidad de habitaciones',
         'cantidad_ambientes' => 'cantidad de ambientes',
-        'descripcion' => 'descripción',
-        'apto_credito' => 'apto a crédito',
+        'descripcion' => 'descripci��n',
+        'apto_credito' => 'apto a crǸdito',
         'estado' => 'estado',
-        'categorias' => 'categorías',
+        'categorias' => 'categor��as',
     ];
 
     public function __construct(
@@ -98,6 +100,7 @@ final class PropiedadService
                     : $actual['localidad_id'],
                 'metros_cuadrados' => $validados['metros_cuadrados'] ?? $actual['metros_cuadrados'],
                 'valor' => $validados['valor'] ?? $actual['valor'],
+                'moneda' => array_key_exists('moneda', $validados) ? $validados['moneda'] : $actual['moneda'],
                 'cantidad_habitaciones' => $validados['cantidad_habitaciones'] ?? $actual['cantidad_habitaciones'],
                 'cantidad_ambientes' => $validados['cantidad_ambientes'] ?? $actual['cantidad_ambientes'],
                 'descripcion' => array_key_exists('descripcion', $validados) ? $validados['descripcion'] : $actual['descripcion'],
@@ -215,6 +218,7 @@ final class PropiedadService
             ? (float) $propiedad['metros_cuadrados']
             : null;
         $propiedad['valor'] = $propiedad['valor'] !== null ? (float) $propiedad['valor'] : null;
+        $propiedad['moneda'] = $propiedad['moneda'] !== null ? (string) $propiedad['moneda'] : null;
         $propiedad['cantidad_habitaciones'] = (int) $propiedad['cantidad_habitaciones'];
         $propiedad['cantidad_ambientes'] = (int) $propiedad['cantidad_ambientes'];
         $propiedad['apto_credito'] = (bool) $propiedad['apto_credito'];
